@@ -1,34 +1,43 @@
+
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { expect } from "chai";
 import { ethers } from "hardhat";
-import { MyERC20Token } from "../typechain-types"
+import { MyERC20Token, TokenSale } from "../typechain-types";
 
-const INITIAL_SUPPLY = 10000;
+const ERC20_TOKEN_RATION = 5;
 
-describe("Basic tests", () => {
-    let MyERC20Contract: MyERC20Token;
-    let accounts: SignerWithAddress[];
+describe("NFT Shop", async () => {
+    let tokenSaleContract: TokenSale;
+    let erc20TokenContract: MyERC20Token;
+    let deployer : SignerWithAddress;
+    let acc1 : SignerWithAddress;
+    let acc2 : SignerWithAddress;
 
     beforeEach(async () => {
-        accounts = await ethers.getSigners();
-        const MyERC20ContractFactory = await ethers.getContractFactory("MyERC20Token");
-        MyERC20Contract = await MyERC20ContractFactory.deploy(INITIAL_SUPPLY);
-        await MyERC20Contract.deployed();
-    });
-    
-    it("should have zero supply at deployment", async () => {
-        const totalSupplyBigNumber = await MyERC20Contract.totalSupply();
-        const decimals = await MyERC20Contract.decimals();
-        const totalSupply = parseFloat(ethers.utils.formatUnits(totalSupplyBigNumber, decimals));
-        expect(totalSupply).to.eq(INITIAL_SUPPLY);
+        [deployer, acc1, acc2] = await ethers.getSigners();
+        const erc20TokenContractFactory = await ethers.getContractFactory("MyERC20Token");
+        erc20TokenContract = await erc20TokenContractFactory.deploy() as MyERC20Token;
+        await erc20TokenContract.deployed();
+        const tokenSaleContractFactory = await ethers.getContractFactory("TokenSale");
+        tokenSaleContract = await tokenSaleContractFactory.deploy(ERC20_TOKEN_RATION, erc20TokenContract.address) as TokenSale;
+        await tokenSaleContract.deployed();
     });
 
-    it("triggers the transfer event with the address of the sender when sending transactions", async () => {
-        const senderAddress = accounts[0].address;
-        const receiverAddress = accounts[1].address;
-        await expect(MyERC20Contract.transfer(receiverAddress,1))
-        .to.emit(MyERC20Contract, "Transfer")
-        .withArgs(senderAddress, receiverAddress,1);
-    });
+    describe("When the Shop contract is deployed", async () => {
+        it("defines the ratio as provided in parameters", async () => {
+            const rate = await tokenSaleContract.ratio();
+            expect(rate).to.equal(ERC20_TOKEN_RATION);
+        });
 
+        it("uses a valid ERC20 as payment token", async () => {
+            const paymentTokenAddress = await tokenSaleContract.paymentToken();
+            expect(paymentTokenAddress).to.equal(erc20TokenContract.address);
+            const erc20TokenContractFactory = await ethers.getContractFactory("MyERC20Token");
+            const paymentTokenContract = erc20TokenContractFactory.attach(paymentTokenAddress);
+            const myBalance = await paymentTokenContract.balanceOf(deployer.address);
+            expect(myBalance).to.eq(0);
+            const totalSupply = await paymentTokenContract.totalSupply();
+            expect(totalSupply).to.eq(0);
+        });
+    });
 });
